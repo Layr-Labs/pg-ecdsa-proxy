@@ -1,6 +1,6 @@
-# PostgresECDSAAuth
+# pg-ecdsa-proxy
 
-A PostgreSQL proxy that authenticates users via ECDSA signatures (Ethereum-style).
+A high-performance PostgreSQL proxy that authenticates users via ECDSA signatures (Ethereum-style). Written in Rust.
 
 ## How it works
 
@@ -19,7 +19,7 @@ A PostgreSQL proxy that authenticates users via ECDSA signatures (Ethereum-style
 
 ```bash
 # Set your allowed Ethereum address
-echo "ALLOWED_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" > .env
+export ALLOWED_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 
 # Start services
 docker compose up -d
@@ -74,18 +74,59 @@ conn = psycopg2.connect(
 )
 ```
 
+### Rust (with tokio-postgres)
+
+```rust
+use alloy_primitives::eip191_hash_message;
+use alloy_signer::SignerSync;
+use alloy_signer_local::PrivateKeySigner;
+use tokio_postgres::NoTls;
+
+let signer: PrivateKeySigner = PRIVATE_KEY.parse().unwrap();
+let timestamp = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH).unwrap()
+    .as_secs().to_string();
+let sig = signer.sign_message_sync(timestamp.as_bytes()).unwrap();
+let password = format!("{}:0x{}", timestamp, hex::encode(sig.as_bytes()));
+
+let (client, connection) = tokio_postgres::connect(
+    &format!(
+        "host=localhost port=5434 user={} password={} dbname=postgres",
+        signer.address(), password
+    ),
+    NoTls,
+).await?;
+```
+
 ## Configuration
 
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `ALLOWED_ADDRESS` | Ethereum address allowed to connect | - |
+| `PROXY_HOST` | Proxy listen address | `0.0.0.0` |
+| `PROXY_PORT` | Proxy listen port | `5433` |
 | `PG_HOST` | PostgreSQL host | `postgres` |
 | `PG_PORT` | PostgreSQL port | `5432` |
 | `PG_USER` | Service account user | `postgres` |
 | `PG_PASSWORD` | Service account password | `postgres` |
+| `SIGNATURE_WINDOW_SECS` | Signature validity window | `300` (5 min) |
+
+## Building
+
+```bash
+# Build locally
+cargo build --release
+
+# Build Docker image
+docker build -t pg-ecdsa-proxy .
+```
 
 ## Security Notes
 
-- Signatures are valid for 5 minutes (configurable in `auth.py`)
-- V1 only supports a single hardcoded address
+- Signatures are valid for 5 minutes (configurable via `SIGNATURE_WINDOW_SECS`)
+- V1 only supports a single allowed address
 - Production: Use TLS termination in front of the proxy
+
+## License
+
+MIT
