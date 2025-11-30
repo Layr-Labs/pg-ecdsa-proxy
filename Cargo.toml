@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.43", features = ["full", "process"] }
 
 # Postgres
 tokio-postgres = "0.7"
@@ -15,16 +15,28 @@ bb8-postgres = "0.9"
 # ECDSA / Ethereum
 alloy-primitives = { version = "0.8", features = ["k256"] }
 
+# Encryption
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+
+# S3-compatible storage (works with AWS S3, Cloudflare R2, MinIO, etc.)
+# Pinned to versions compatible with Rust 1.86
+aws-sdk-s3 = "=1.82.0"
+aws-config = { version = "=1.6.1", features = ["behavior-version-latest"] }
+aws-credential-types = "=1.2.3"
+
 # Utilities
 bytes = "1.9"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 hex = "0.4"
+chrono = "0.4"
 
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
-

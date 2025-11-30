@@ -1,7 +1,9 @@
 mod auth;
+mod backup;
 mod config;
 mod protocol;
 
+use backup::BackupConfig;
 use bytes::BytesMut;
 use config::CONFIG;
 use protocol::{
@@ -48,6 +50,33 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         "Allowed address: 0x{}",
         hex::encode(CONFIG.allowed_address)
     );
+
+    // Handle backup restore and scheduling if configured
+    if let Some(backup_config) = BackupConfig::from_env() {
+        if backup_config.is_enabled() {
+            info!(
+                "Backup enabled: s3://{}/{} every {}s",
+                backup_config.s3_bucket,
+                backup_config.backup_prefix,
+                backup_config.backup_interval_secs
+            );
+            if backup_config.mnemonic.is_some() {
+                info!("Backups will be encrypted with MNEMONIC-derived key");
+            } else {
+                warn!("MNEMONIC not set - backups will NOT be encrypted!");
+            }
+
+            // Try to restore from backup if database is empty
+            match backup::restore_if_empty(&backup_config).await {
+                Ok(true) => info!("Database restored from backup"),
+                Ok(false) => info!("No restore needed"),
+                Err(e) => error!("Restore check failed: {}", e),
+            }
+
+            // Start backup scheduler
+            tokio::spawn(backup::start_backup_scheduler(backup_config));
+        }
+    }
 
     let listener = TcpListener::bind(CONFIG.proxy_addr).await?;
 

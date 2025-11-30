@@ -25,10 +25,21 @@ services:
       PROXY_PORT: "5433"
       PG_HOST: postgres
       PG_PORT: "5432"
-      PG_USER: postgres
-      PG_PASSWORD: postgres
-      PG_DATABASE: postgres
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:-postgres}
+      PG_DATABASE: ${PG_DATABASE:-postgres}
       ALLOWED_ADDRESS: ${ALLOWED_ADDRESS:-0x0000000000000000000000000000000000000000}
+      # Backup configuration (optional)
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-auto}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-pg-backup}
+      BACKUP_INTERVAL_SECS: ${BACKUP_INTERVAL_SECS:-86400}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-}
+      MNEMONIC: ${MNEMONIC:-}
     depends_on:
       postgres:
         condition: service_healthy

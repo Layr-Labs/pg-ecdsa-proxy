@@ -2,18 +2,32 @@
 
 A high-performance PostgreSQL proxy that authenticates users via ECDSA signatures (Ethereum-style). Written in Rust.
 
+## Features
+
+- **ECDSA Authentication** - Users authenticate with Ethereum signatures instead of passwords
+- **Encrypted Backups** - Automatic encrypted backups to S3-compatible storage (AWS S3, Cloudflare R2, MinIO)
+- **TEE-Ready** - Designed for deployment in Trusted Execution Environments with EigenCompute
+
 ## How it works
 
 ```
 ┌─────────┐     sign challenge      ┌─────────────┐     service acct     ┌──────────┐
 │  Client │ ◄─────────────────────► │ Auth Proxy  │ ◄──────────────────► │ Postgres │
 └─────────┘   verify signature      └─────────────┘                      └──────────┘
+                                           │
+                                           ▼
+                                    ┌─────────────┐
+                                    │  Encrypted  │
+                                    │   Backups   │
+                                    │  (S3/R2)    │
+                                    └─────────────┘
 ```
 
 1. Client connects using their Ethereum address as `user`
 2. Client provides `password` in format: `<timestamp>:<signature>`
 3. Proxy verifies the signature matches the claimed address
 4. If valid, proxy connects to Postgres with service account and proxies queries
+5. Periodic encrypted backups are uploaded to S3-compatible storage
 
 ## Quick Start (Local)
 
@@ -56,11 +70,7 @@ cd pg-ecdsa-proxy
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your settings:
-#   ALLOWED_ADDRESS=0x...  (Ethereum address allowed to connect)
-#   PG_HOST=...            (Your Postgres host)
-#   PG_USER=...            (Service account)
-#   PG_PASSWORD=...        (Service account password)
+# Edit .env with your settings
 
 # Deploy to TEE
 eigenx app deploy
@@ -69,38 +79,107 @@ eigenx app deploy
 ### Monitor
 
 ```bash
-# View app status
 eigenx app info
-
-# View logs
 eigenx app logs --watch
-
-# List all apps
-eigenx app list
 ```
 
 ### Enable TLS (Production)
 
 ```bash
-# Add TLS configuration
 eigenx app configure tls
-
-# Add TLS variables to .env
 cat .env.example.tls >> .env
-# Set DOMAIN=yourdomain.com and APP_PORT=5433
-
-# Deploy with TLS
+# Set DOMAIN=yourdomain.com
 eigenx app upgrade
 ```
 
-Then create a DNS A record pointing your domain to the instance IP (from `eigenx app info`).
+## Encrypted Backups
 
-### Manage
+Backups are encrypted using a key derived from the `MNEMONIC` environment variable (automatically provided by EigenCompute TEE). Only the TEE instance can decrypt its own backups.
+
+### Automatic Restore on Startup
+
+When the proxy starts, it automatically:
+1. Checks if the database is empty (no user tables)
+2. If empty, downloads the latest encrypted backup from S3
+3. Decrypts and restores the backup
+
+This ensures seamless recovery when redeploying or migrating TEE instances.
+
+### Backup Configuration
+
+Add these to your `.env`:
 
 ```bash
-eigenx app stop pg-ecdsa-proxy    # Stop
-eigenx app start pg-ecdsa-proxy   # Start
-eigenx app terminate pg-ecdsa-proxy  # Remove
+# S3-compatible storage (works with AWS S3, Cloudflare R2, MinIO, etc.)
+BACKUP_S3_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
+BACKUP_S3_BUCKET=pg-backups
+BACKUP_S3_ACCESS_KEY=your_access_key
+BACKUP_S3_SECRET_KEY=your_secret_key
+BACKUP_S3_REGION=auto
+
+# Backup settings
+BACKUP_PREFIX=my-app                    # Backup folder prefix
+BACKUP_INTERVAL_SECS=86400              # Backup every 24 hours (default)
+BACKUP_RETENTION_COUNT=7                # Keep last 7 backups (optional)
+BACKUP_RETENTION_DAYS=30                # Or delete backups older than 30 days (optional)
+
+# Encryption (provided automatically by EigenCompute)
+MNEMONIC=your twelve word mnemonic phrase here
+```
+
+### Storage Providers
+
+#### Cloudflare R2
+
+```bash
+BACKUP_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+BACKUP_S3_REGION=auto
+```
+
+Get credentials from Cloudflare Dashboard → R2 → Manage R2 API Tokens.
+
+#### AWS S3
+
+```bash
+BACKUP_S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
+BACKUP_S3_REGION=us-east-1
+```
+
+#### MinIO (Self-hosted)
+
+```bash
+BACKUP_S3_ENDPOINT=https://minio.example.com
+BACKUP_S3_REGION=us-east-1
+```
+
+### Encryption Details
+
+- **Algorithm**: AES-256-GCM (authenticated encryption)
+- **Key Derivation**: HKDF-SHA256 from MNEMONIC
+- **Nonce**: Random 12 bytes prepended to each backup
+- **Format**: `[12-byte nonce][ciphertext][16-byte auth tag]`
+
+Only the TEE instance with the same MNEMONIC can decrypt backups. This ensures:
+- Backups are useless if storage is compromised
+- Only your TEE can restore from backups
+- No external key management needed
+
+### Restore from Backup
+
+**Automatic**: The proxy automatically restores from the latest backup when the database is empty on startup. Just deploy with the same MNEMONIC.
+
+**Manual**: To manually restore, download and decrypt the backup:
+
+```bash
+# Download encrypted backup
+aws s3 cp s3://pg-backups/my-app/20240101_120000.backup.enc ./backup.enc
+
+# Decrypt using the same MNEMONIC (requires implementing decryption tool)
+# Key derivation: HKDF-SHA256(salt="pg-ecdsa-proxy-backup", ikm=MNEMONIC, info="backup-encryption-key")
+# Encryption: AES-256-GCM, first 12 bytes are nonce
+
+# Restore to Postgres
+pg_restore -h localhost -U postgres -d mydb ./backup.dump
 ```
 
 ## Client Integration
@@ -172,6 +251,8 @@ let (client, connection) = tokio_postgres::connect(
 
 ## Configuration
 
+### Proxy Settings
+
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `ALLOWED_ADDRESS` | Ethereum address allowed to connect | - |
@@ -182,6 +263,21 @@ let (client, connection) = tokio_postgres::connect(
 | `PG_USER` | Service account user | `postgres` |
 | `PG_PASSWORD` | Service account password | `postgres` |
 | `SIGNATURE_WINDOW_SECS` | Signature validity window | `300` (5 min) |
+
+### Backup Settings
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `BACKUP_S3_ENDPOINT` | S3-compatible endpoint URL | - (disabled) |
+| `BACKUP_S3_BUCKET` | Bucket name | - |
+| `BACKUP_S3_ACCESS_KEY` | Access key ID | - |
+| `BACKUP_S3_SECRET_KEY` | Secret access key | - |
+| `BACKUP_S3_REGION` | Region | `auto` |
+| `BACKUP_PREFIX` | Backup path prefix | `pg-backup` |
+| `BACKUP_INTERVAL_SECS` | Backup interval | `86400` (24h) |
+| `BACKUP_RETENTION_COUNT` | Keep last N backups | - (keep all) |
+| `BACKUP_RETENTION_DAYS` | Delete backups older than N days | - (keep all) |
+| `MNEMONIC` | Encryption key source (from TEE) | - (unencrypted) |
 
 ## Building
 
@@ -199,6 +295,7 @@ docker build -t pg-ecdsa-proxy .
 - V1 only supports a single allowed address
 - Production: Use TLS termination in front of the proxy
 - EigenCompute deployment runs in Intel TDX secure enclave with hardware isolation
+- Backups are encrypted with MNEMONIC-derived key (only TEE can decrypt)
 
 ## License
 
