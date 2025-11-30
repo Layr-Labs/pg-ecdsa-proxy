@@ -1,0 +1,15 @@
+{
+  "name": "ecdsa-postgres-client",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx client.ts"
+  },
+  "dependencies": {
+    "postgres": "^3.4.4",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}

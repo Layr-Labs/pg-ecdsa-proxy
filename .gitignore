@@ -1,0 +1,20 @@
+# Environment
+.env
+
+# Rust
+target/
+
+# Node
+node_modules/
+
+# Python (legacy)
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp

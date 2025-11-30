@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - ./sql:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  proxy:
+    build: .
+    ports:
+      - "5434:5433"
+    environment:
+      RUST_LOG: info
+      PROXY_HOST: "0.0.0.0"
+      PROXY_PORT: "5433"
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_DATABASE: postgres
+      ALLOWED_ADDRESS: ${ALLOWED_ADDRESS:-0x0000000000000000000000000000000000000000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
