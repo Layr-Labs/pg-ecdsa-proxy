@@ -15,7 +15,7 @@ A high-performance PostgreSQL proxy that authenticates users via ECDSA signature
 3. Proxy verifies the signature matches the claimed address
 4. If valid, proxy connects to Postgres with service account and proxies queries
 
-## Quick Start
+## Quick Start (Local)
 
 ```bash
 # Set your allowed Ethereum address
@@ -28,6 +28,79 @@ docker compose up -d
 cd example
 npm install
 PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 npm start
+```
+
+## Deploy to EigenCompute (TEE)
+
+Deploy the proxy to a Trusted Execution Environment with [EigenX CLI](https://github.com/Layr-Labs/eigenx-cli).
+
+### Prerequisites
+
+```bash
+# Install eigenx CLI
+curl -fsSL https://eigenx-scripts.s3.us-east-1.amazonaws.com/install-eigenx.sh | bash
+
+# Authenticate
+eigenx auth login  # or: eigenx auth generate --store
+
+# Ensure you have Sepolia ETH for deployment transactions
+eigenx auth whoami
+```
+
+### Deploy
+
+```bash
+# Clone the repo
+git clone https://github.com/Layr-Labs/pg-ecdsa-proxy.git
+cd pg-ecdsa-proxy
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings:
+#   ALLOWED_ADDRESS=0x...  (Ethereum address allowed to connect)
+#   PG_HOST=...            (Your Postgres host)
+#   PG_USER=...            (Service account)
+#   PG_PASSWORD=...        (Service account password)
+
+# Deploy to TEE
+eigenx app deploy
+```
+
+### Monitor
+
+```bash
+# View app status
+eigenx app info
+
+# View logs
+eigenx app logs --watch
+
+# List all apps
+eigenx app list
+```
+
+### Enable TLS (Production)
+
+```bash
+# Add TLS configuration
+eigenx app configure tls
+
+# Add TLS variables to .env
+cat .env.example.tls >> .env
+# Set DOMAIN=yourdomain.com and APP_PORT=5433
+
+# Deploy with TLS
+eigenx app upgrade
+```
+
+Then create a DNS A record pointing your domain to the instance IP (from `eigenx app info`).
+
+### Manage
+
+```bash
+eigenx app stop pg-ecdsa-proxy    # Stop
+eigenx app start pg-ecdsa-proxy   # Start
+eigenx app terminate pg-ecdsa-proxy  # Remove
 ```
 
 ## Client Integration
@@ -77,7 +150,6 @@ conn = psycopg2.connect(
 ### Rust (with tokio-postgres)
 
 ```rust
-use alloy_primitives::eip191_hash_message;
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use tokio_postgres::NoTls;
@@ -126,6 +198,7 @@ docker build -t pg-ecdsa-proxy .
 - Signatures are valid for 5 minutes (configurable via `SIGNATURE_WINDOW_SECS`)
 - V1 only supports a single allowed address
 - Production: Use TLS termination in front of the proxy
+- EigenCompute deployment runs in Intel TDX secure enclave with hardware isolation
 
 ## License
 
