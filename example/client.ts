@@ -21,7 +21,7 @@ async function main() {
   // Connect to proxy using Ethereum address as user
   const sql = postgres({
     host: "localhost",
-    port: 5434,
+    port: 5433,
     user: account.address,
     password: password,
     database: "postgres",

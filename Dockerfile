@@ -1,4 +1,4 @@
-# Build stage
+# Build stage for Rust proxy
 FROM rust:1.86-slim-bookworm AS builder
 
 WORKDIR /app
@@ -16,25 +16,37 @@ RUN cargo build --release && rm -rf src target/release/postgres-ecdsa-proxy targ
 COPY src ./src
 RUN touch src/main.rs && cargo build --release
 
-# Get pg_dump from postgres Debian image (not Alpine)
-FROM postgres:16-bookworm AS pg
+# Runtime stage with Postgres + Proxy
+FROM postgres:16-bookworm
 
-# Runtime stage
-FROM debian:bookworm-slim
-
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libpq5 \
-    libreadline8 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy postgres tools from postgres Debian image
-COPY --from=pg /usr/lib/postgresql/16/bin/pg_dump /usr/bin/pg_dump
-COPY --from=pg /usr/lib/postgresql/16/bin/pg_restore /usr/bin/pg_restore
-COPY --from=pg /usr/lib/postgresql/16/bin/psql /usr/bin/psql
+# Copy the proxy binary
+COPY --from=builder /app/target/release/postgres-ecdsa-proxy /usr/local/bin/proxy
 
-WORKDIR /app
-COPY --from=builder /app/target/release/postgres-ecdsa-proxy /app/proxy
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
+# Copy init SQL
+COPY sql/init.sql /docker-entrypoint-initdb.d/init.sql
+
+# Environment defaults
+ENV POSTGRES_USER=postgres \
+    POSTGRES_PASSWORD=postgres \
+    POSTGRES_DB=postgres \
+    PG_HOST=localhost \
+    PG_PORT=5432 \
+    PG_USER=postgres \
+    PG_PASSWORD=postgres \
+    PG_DATABASE=postgres \
+    PROXY_HOST=0.0.0.0 \
+    PROXY_PORT=5433
+
+# Expose proxy port (Postgres 5432 is internal only)
 EXPOSE 5433
-CMD ["/app/proxy"]
+
+ENTRYPOINT ["/entrypoint.sh"]
