@@ -12,7 +12,7 @@ pub struct Config {
     pub pg_user: String,
     pub pg_password: String,
     pub pg_database: String,
-    pub allowed_address: [u8; 20],
+    pub allowed_addresses: Vec<[u8; 20]>,
     pub signature_window_secs: u64,
     pub pool_size: u32,
 }
@@ -25,11 +25,21 @@ impl Config {
             .parse()
             .expect("PROXY_PORT must be a number");
 
-        let allowed_hex = env::var("ALLOWED_ADDRESS")
-            .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".into());
+        // Support comma-separated list of addresses
+        let allowed_hex = env::var("ALLOWED_ADDRESSES")
+            .or_else(|_| env::var("ALLOWED_ADDRESS"))
+            .unwrap_or_default();
         
-        let allowed_address = parse_eth_address(&allowed_hex)
-            .expect("ALLOWED_ADDRESS must be a valid Ethereum address");
+        let allowed_addresses: Vec<[u8; 20]> = allowed_hex
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| parse_eth_address(s))
+            .collect();
+
+        if allowed_addresses.is_empty() {
+            panic!("ALLOWED_ADDRESSES must contain at least one valid Ethereum address");
+        }
 
         Self {
             proxy_addr: format!("{}:{}", proxy_host, proxy_port)
@@ -43,7 +53,7 @@ impl Config {
             pg_user: env::var("PG_USER").unwrap_or_else(|_| "postgres".into()),
             pg_password: env::var("PG_PASSWORD").unwrap_or_else(|_| "postgres".into()),
             pg_database: env::var("PG_DATABASE").unwrap_or_else(|_| "postgres".into()),
-            allowed_address,
+            allowed_addresses,
             signature_window_secs: env::var("SIGNATURE_WINDOW_SECS")
                 .unwrap_or_else(|_| "300".into())
                 .parse()
@@ -53,6 +63,11 @@ impl Config {
                 .parse()
                 .expect("POOL_SIZE must be a number"),
         }
+    }
+
+    /// Check if an address is in the allowed list
+    pub fn is_allowed(&self, addr: &[u8; 20]) -> bool {
+        self.allowed_addresses.contains(addr)
     }
 }
 

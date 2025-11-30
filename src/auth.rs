@@ -73,9 +73,9 @@ pub fn verify_signature(address: &str, password: &str) -> Result<(), AuthError> 
         });
     }
     
-    // Check address is allowed
-    let allowed = Address::from(CONFIG.allowed_address);
-    if recovered != allowed {
+    // Check address is in allowed list
+    let recovered_bytes: [u8; 20] = recovered.into();
+    if !CONFIG.is_allowed(&recovered_bytes) {
         return Err(AuthError::AddressNotAllowed(recovered.to_string()));
     }
     

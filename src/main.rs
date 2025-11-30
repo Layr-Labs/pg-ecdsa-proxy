@@ -47,8 +47,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         CONFIG.pg_host, CONFIG.pg_port
     );
     info!(
-        "Allowed address: 0x{}",
-        hex::encode(CONFIG.allowed_address)
+        "Allowed addresses: {}",
+        CONFIG.allowed_addresses
+            .iter()
+            .map(|a| format!("0x{}", hex::encode(a)))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     // Handle backup restore and scheduling if configured
