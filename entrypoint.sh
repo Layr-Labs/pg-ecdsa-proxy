@@ -1,6 +1,30 @@
 #!/bin/bash
 set -e
 
+# Generate random credentials for internal Postgres
+# These are never exposed - only the proxy knows them
+generate_random() {
+    head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c "$1"
+}
+
+# Only generate if not explicitly set (allows override for debugging)
+if [ -z "$PG_RANDOM_CREDS" ] || [ "$PG_RANDOM_CREDS" = "true" ]; then
+    RANDOM_USER="svc_$(generate_random 12)"
+    RANDOM_PASS="$(generate_random 32)"
+    
+    # Set for Postgres initialization
+    export POSTGRES_USER="$RANDOM_USER"
+    export POSTGRES_PASSWORD="$RANDOM_PASS"
+    export POSTGRES_DB="${POSTGRES_DB:-postgres}"
+    
+    # Set for proxy connection
+    export PG_USER="$RANDOM_USER"
+    export PG_PASSWORD="$RANDOM_PASS"
+    export PG_DATABASE="${PG_DATABASE:-$POSTGRES_DB}"
+    
+    echo "Generated random internal credentials (user: $RANDOM_USER)"
+fi
+
 # Start Postgres in the background using the official entrypoint
 echo "Starting PostgreSQL..."
 docker-entrypoint.sh postgres &

@@ -35,16 +35,15 @@ RUN chmod +x /entrypoint.sh
 COPY sql/init.sql /docker-entrypoint-initdb.d/init.sql
 
 # Environment defaults
-ENV POSTGRES_USER=postgres \
-    POSTGRES_PASSWORD=postgres \
-    POSTGRES_DB=postgres \
+# Note: POSTGRES_USER/PASSWORD and PG_USER/PASSWORD are auto-generated at runtime
+# for security. Set PG_RANDOM_CREDS=false to use custom credentials.
+ENV POSTGRES_DB=postgres \
     PG_HOST=localhost \
     PG_PORT=5432 \
-    PG_USER=postgres \
-    PG_PASSWORD=postgres \
     PG_DATABASE=postgres \
     PROXY_HOST=0.0.0.0 \
-    PROXY_PORT=5433
+    PROXY_PORT=5433 \
+    PG_RANDOM_CREDS=true
 
 # Expose proxy port (Postgres 5432 is internal only)
 EXPOSE 5433
