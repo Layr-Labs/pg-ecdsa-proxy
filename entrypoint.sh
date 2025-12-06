@@ -26,8 +26,10 @@ if [ -z "$PG_RANDOM_CREDS" ] || [ "$PG_RANDOM_CREDS" = "true" ]; then
 fi
 
 # Start Postgres in the background using the official entrypoint
-echo "Starting PostgreSQL..."
-docker-entrypoint.sh postgres &
+# -c listen_addresses=localhost ensures Postgres only listens internally
+# All external access MUST go through the proxy
+echo "Starting PostgreSQL (localhost only)..."
+docker-entrypoint.sh postgres -c listen_addresses=localhost &
 PG_PID=$!
 
 # Wait for Postgres to be ready

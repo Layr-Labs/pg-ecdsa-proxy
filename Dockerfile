@@ -45,7 +45,7 @@ ENV POSTGRES_DB=postgres \
     PROXY_PORT=5433 \
     PG_RANDOM_CREDS=true
 
-# Expose proxy port (Postgres 5432 is internal only)
+# Only expose proxy port - Postgres 5432 is localhost-only (set in entrypoint.sh)
 EXPOSE 5433
 
 ENTRYPOINT ["/entrypoint.sh"]
