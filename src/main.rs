@@ -2,6 +2,7 @@ mod auth;
 mod backup;
 mod config;
 mod protocol;
+mod ratelimit;
 
 use backup::BackupConfig;
 use bytes::BytesMut;
@@ -82,14 +83,22 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    info!(
+        "Rate limiting: {} attempts/IP, {} attempts/addr per {}s window",
+        CONFIG.rate_limit_max_attempts_ip,
+        CONFIG.rate_limit_max_attempts_addr,
+        CONFIG.rate_limit_window_secs
+    );
+
     let listener = TcpListener::bind(CONFIG.proxy_addr).await?;
 
     loop {
         let (socket, addr) = listener.accept().await?;
         info!("New connection from {}", addr);
         
+        let client_ip = addr.ip();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket).await {
+            if let Err(e) = handle_client(socket, client_ip).await {
                 error!("Connection error from {}: {}", addr, e);
             }
             info!("Connection closed for {}", addr);
@@ -97,7 +106,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn handle_client(mut client: TcpStream) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn handle_client(mut client: TcpStream, client_ip: std::net::IpAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut buf = vec![0u8; 8192];
 
     // Read startup message
@@ -128,6 +137,23 @@ async fn handle_client(mut client: TcpStream) -> Result<(), Box<dyn std::error::
 
     info!("Auth attempt: user={}, database={}", user, database);
 
+    // Check rate limit BEFORE processing auth
+    if let Err(wait_time) = ratelimit::check_rate_limit(client_ip, &user) {
+        warn!(
+            "Rate limited: ip={}, user={}, retry_after={}s",
+            client_ip,
+            user,
+            wait_time.as_secs()
+        );
+        client
+            .write_all(&build_error(
+                &format!("Too many auth attempts. Retry after {}s", wait_time.as_secs()),
+                "53300", // too_many_connections
+            ))
+            .await?;
+        return Ok(());
+    }
+
     // Request password
     client.write_all(&build_auth_request(AUTH_CLEARTEXT)).await?;
 
@@ -138,6 +164,8 @@ async fn handle_client(mut client: TcpStream) -> Result<(), Box<dyn std::error::
     // Verify ECDSA signature
     if let Err(e) = auth::verify_signature(&user, &password) {
         warn!("Auth failed for {}: {}", user, e);
+        // Record failure for rate limiting (adds penalty)
+        ratelimit::record_auth_failure(client_ip, &user);
         client.write_all(&build_error(&e.to_string(), "28P01")).await?;
         return Ok(());
     }

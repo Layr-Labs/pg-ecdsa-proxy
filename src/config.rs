@@ -15,6 +15,10 @@ pub struct Config {
     pub allowed_addresses: Vec<[u8; 20]>,
     pub signature_window_secs: u64,
     pub pool_size: u32,
+    // Rate limiting
+    pub rate_limit_window_secs: u64,
+    pub rate_limit_max_attempts_ip: u32,
+    pub rate_limit_max_attempts_addr: u32,
 }
 
 impl Config {
@@ -62,6 +66,19 @@ impl Config {
                 .unwrap_or_else(|_| "20".into())
                 .parse()
                 .expect("POOL_SIZE must be a number"),
+            // Rate limiting defaults: 10 attempts per IP, 5 per address, in 60 second window
+            rate_limit_window_secs: env::var("RATE_LIMIT_WINDOW_SECS")
+                .unwrap_or_else(|_| "60".into())
+                .parse()
+                .unwrap_or(60),
+            rate_limit_max_attempts_ip: env::var("RATE_LIMIT_MAX_IP")
+                .unwrap_or_else(|_| "10".into())
+                .parse()
+                .unwrap_or(10),
+            rate_limit_max_attempts_addr: env::var("RATE_LIMIT_MAX_ADDR")
+                .unwrap_or_else(|_| "5".into())
+                .parse()
+                .unwrap_or(5),
         }
     }
 
